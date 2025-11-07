@@ -188,7 +188,43 @@ http.route({
 
         case "payment_intent.succeeded": {
           // Track one-time payments in the database
+          // Skip if this payment intent is for a subscription (those are tracked via invoices)
           const paymentIntent = event.data.object as any;
+          
+          // Check if this payment intent is associated with a subscription
+          // Method 1: Check if there's a recently created subscription for this customer
+          if (paymentIntent.customer) {
+            const recentSubscriptions = await ctx.runQuery(components.stripe.public.listSubscriptions, {
+              stripeCustomerId: paymentIntent.customer as string,
+            });
+            
+            // If there's a subscription created within the last 2 minutes, this is likely a subscription payment
+            const twoMinutesAgo = Date.now() / 1000 - 120;
+            const recentSubscription = recentSubscriptions.find((sub: any) => 
+              sub._creationTime > twoMinutesAgo
+            );
+            
+            if (recentSubscription) {
+              console.log("⏭️ Skipping payment_intent.succeeded - subscription created recently for this customer");
+              break;
+            }
+          }
+          
+          // Method 2: Check if this payment intent is associated with a subscription invoice
+          if (paymentIntent.invoice) {
+            try {
+              const invoice = await stripe.invoices.retrieve(paymentIntent.invoice as string);
+              // subscription field exists on Invoice at runtime but TypeScript types may not reflect it
+              if ((invoice as any).subscription) {
+                console.log("⏭️ Skipping payment_intent.succeeded - this is a subscription payment (tracked via invoice)");
+                break;
+              }
+            } catch (err) {
+              console.error("Error checking invoice:", err);
+              // Continue to track as payment if we can't check the invoice
+            }
+          }
+          
           await ctx.runMutation(components.stripe.public.handlePaymentIntentSucceeded, {
             stripePaymentIntentId: paymentIntent.id,
             stripeCustomerId: paymentIntent.customer ? (paymentIntent.customer as string) : undefined,
@@ -198,7 +234,7 @@ http.route({
             created: paymentIntent.created,
             metadata: paymentIntent.metadata || {},
           });
-          console.log("✅ Payment intent succeeded handled");
+          console.log("✅ Payment intent succeeded handled (one-time payment)");
           break;
         }
 

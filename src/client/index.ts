@@ -1,5 +1,6 @@
 import { mutationGeneric, queryGeneric } from "convex/server";
 import { v } from "convex/values";
+import StripeSDK from "stripe";
 import type { api } from "../component/_generated/api.js";
 import type { UseApi, RunMutationCtx, RunQueryCtx, ActionCtx } from "./types.js";
 
@@ -166,10 +167,33 @@ export class Stripe {
       quantity: number;
     }
   ) {
-    return ctx.runAction(this.component.public.updateSubscriptionQuantity, {
+    const apiKey = process.env.STRIPE_SECRET_KEY;
+    if (!apiKey) {
+      throw new Error("STRIPE_SECRET_KEY environment variable is not set");
+    }
+    const stripe = new StripeSDK(apiKey);
+
+    // Get the subscription from Stripe to find the subscription item ID
+    const subscription = await stripe.subscriptions.retrieve(
+      args.stripeSubscriptionId
+    );
+
+    if (!subscription.items.data[0]) {
+      throw new Error("Subscription has no items");
+    }
+
+    // Update the subscription item quantity
+    await stripe.subscriptionItems.update(subscription.items.data[0].id, {
+      quantity: args.quantity,
+    });
+
+    // Update our local database
+    await ctx.runMutation(this.component.public.updateSubscriptionQuantityInternal, {
       stripeSubscriptionId: args.stripeSubscriptionId,
       quantity: args.quantity,
     });
+
+    return null;
   }
 
   /**
@@ -204,10 +228,21 @@ export class Stripe {
       cancelAtPeriodEnd?: boolean;
     }
   ) {
-    return ctx.runAction(this.component.public.cancelSubscription, {
-      stripeSubscriptionId: args.stripeSubscriptionId,
-      cancelAtPeriodEnd: args.cancelAtPeriodEnd ?? true,
-    });
+    const apiKey = process.env.STRIPE_SECRET_KEY;
+    if (!apiKey) {
+      throw new Error("STRIPE_SECRET_KEY environment variable is not set");
+    }
+    const stripe = new StripeSDK(apiKey);
+
+    if (args.cancelAtPeriodEnd ?? true) {
+      await stripe.subscriptions.update(args.stripeSubscriptionId, {
+        cancel_at_period_end: true,
+      });
+    } else {
+      await stripe.subscriptions.cancel(args.stripeSubscriptionId);
+    }
+
+    return null;
   }
 
   // ============================================================================
@@ -228,14 +263,35 @@ export class Stripe {
       metadata?: any;
     }
   ) {
-    return ctx.runAction(this.component.public.createCheckoutSession, {
-      priceId: args.priceId,
-      customerId: args.customerId,
+    const apiKey = process.env.STRIPE_SECRET_KEY;
+    if (!apiKey) {
+      throw new Error("STRIPE_SECRET_KEY environment variable is not set");
+    }
+    const stripe = new StripeSDK(apiKey);
+
+    const sessionParams: StripeSDK.Checkout.SessionCreateParams = {
       mode: args.mode,
-      successUrl: args.successUrl,
-      cancelUrl: args.cancelUrl,
-      metadata: args.metadata,
-    });
+      line_items: [
+        {
+          price: args.priceId,
+          quantity: 1,
+        },
+      ],
+      success_url: args.successUrl,
+      cancel_url: args.cancelUrl,
+      metadata: args.metadata || {},
+    };
+
+    if (args.customerId) {
+      sessionParams.customer = args.customerId;
+    }
+
+    const session = await stripe.checkout.sessions.create(sessionParams);
+
+    return {
+      sessionId: session.id,
+      url: session.url,
+    };
   }
 
   /**
@@ -248,10 +304,20 @@ export class Stripe {
       returnUrl: string;
     }
   ) {
-    return ctx.runAction(this.component.public.createCustomerPortalSession, {
-      customerId: args.customerId,
-      returnUrl: args.returnUrl,
+    const apiKey = process.env.STRIPE_SECRET_KEY;
+    if (!apiKey) {
+      throw new Error("STRIPE_SECRET_KEY environment variable is not set");
+    }
+    const stripe = new StripeSDK(apiKey);
+
+    const session = await stripe.billingPortal.sessions.create({
+      customer: args.customerId,
+      return_url: args.returnUrl,
     });
+
+    return {
+      url: session.url,
+    };
   }
 
   // ============================================================================

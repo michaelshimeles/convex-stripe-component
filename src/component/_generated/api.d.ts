@@ -29,31 +29,6 @@ declare const fullApi: ApiFromModules<{
 }>;
 export type Mounts = {
   public: {
-    cancelSubscription: FunctionReference<
-      "action",
-      "public",
-      { cancelAtPeriodEnd: boolean; stripeSubscriptionId: string },
-      null
-    >;
-    createCheckoutSession: FunctionReference<
-      "action",
-      "public",
-      {
-        cancelUrl: string;
-        customerId?: string;
-        metadata?: any;
-        mode: "payment" | "subscription" | "setup";
-        priceId: string;
-        successUrl: string;
-      },
-      { sessionId: string; url: string | null }
-    >;
-    createCustomerPortalSession: FunctionReference<
-      "action",
-      "public",
-      { customerId: string; returnUrl: string },
-      { url: string }
-    >;
     createOrUpdateCustomer: FunctionReference<
       "mutation",
       "public",
@@ -376,12 +351,6 @@ export type Mounts = {
         stripeSubscriptionId: string;
         userId?: string;
       },
-      null
-    >;
-    updateSubscriptionQuantity: FunctionReference<
-      "action",
-      "public",
-      { quantity: number; stripeSubscriptionId: string },
       null
     >;
     updateSubscriptionQuantityInternal: FunctionReference<

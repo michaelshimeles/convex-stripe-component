@@ -43,31 +43,6 @@ export declare const internal: FilterApi<
 export declare const components: {
   stripe: {
     public: {
-      cancelSubscription: FunctionReference<
-        "action",
-        "internal",
-        { cancelAtPeriodEnd: boolean; stripeSubscriptionId: string },
-        null
-      >;
-      createCheckoutSession: FunctionReference<
-        "action",
-        "internal",
-        {
-          cancelUrl: string;
-          customerId?: string;
-          metadata?: any;
-          mode: "payment" | "subscription" | "setup";
-          priceId: string;
-          successUrl: string;
-        },
-        { sessionId: string; url: string | null }
-      >;
-      createCustomerPortalSession: FunctionReference<
-        "action",
-        "internal",
-        { customerId: string; returnUrl: string },
-        { url: string }
-      >;
       createOrUpdateCustomer: FunctionReference<
         "mutation",
         "internal",
@@ -390,12 +365,6 @@ export declare const components: {
           stripeSubscriptionId: string;
           userId?: string;
         },
-        null
-      >;
-      updateSubscriptionQuantity: FunctionReference<
-        "action",
-        "internal",
-        { quantity: number; stripeSubscriptionId: string },
         null
       >;
       updateSubscriptionQuantityInternal: FunctionReference<
