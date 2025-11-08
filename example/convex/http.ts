@@ -191,26 +191,8 @@ http.route({
           // Skip if this payment intent is for a subscription (those are tracked via invoices)
           const paymentIntent = event.data.object as any;
           
-          // Check if this payment intent is associated with a subscription
-          // Method 1: Check if there's a recently created subscription for this customer
-          if (paymentIntent.customer) {
-            const recentSubscriptions = await ctx.runQuery(components.stripe.public.listSubscriptions, {
-              stripeCustomerId: paymentIntent.customer as string,
-            });
-            
-            // If there's a subscription created within the last 2 minutes, this is likely a subscription payment
-            const twoMinutesAgo = Date.now() / 1000 - 120;
-            const recentSubscription = recentSubscriptions.find((sub: any) => 
-              sub._creationTime > twoMinutesAgo
-            );
-            
-            if (recentSubscription) {
-              console.log("⏭️ Skipping payment_intent.succeeded - subscription created recently for this customer");
-              break;
-            }
-          }
-          
-          // Method 2: Check if this payment intent is associated with a subscription invoice
+          // Method 1 (Primary): Check if this payment intent is associated with a subscription invoice
+          // This is the most reliable method as invoices are always linked to subscriptions
           if (paymentIntent.invoice) {
             try {
               const invoice = await stripe.invoices.retrieve(paymentIntent.invoice as string);
@@ -221,7 +203,26 @@ http.route({
               }
             } catch (err) {
               console.error("Error checking invoice:", err);
-              // Continue to track as payment if we can't check the invoice
+              // Continue to other checks if we can't check the invoice
+            }
+          }
+          
+          // Method 2 (Fallback): Check if there's a recently created subscription for this customer
+          // Use a 10-minute window to account for webhook delivery delays and processing time
+          if (paymentIntent.customer) {
+            const recentSubscriptions = await ctx.runQuery(components.stripe.public.listSubscriptions, {
+              stripeCustomerId: paymentIntent.customer as string,
+            });
+            
+            // If there's a subscription created within the last 10 minutes, this is likely a subscription payment
+            const tenMinutesAgo = Date.now() / 1000 - 600;
+            const recentSubscription = recentSubscriptions.find((sub: any) => 
+              sub._creationTime > tenMinutesAgo
+            );
+            
+            if (recentSubscription) {
+              console.log("⏭️ Skipping payment_intent.succeeded - subscription created recently for this customer");
+              break;
             }
           }
           
