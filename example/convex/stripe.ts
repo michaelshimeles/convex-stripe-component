@@ -160,12 +160,14 @@ export const linkSubscriptionToOrg = mutation({
     userId: v.string(),
   },
   handler: async (ctx, args) => {
-    // Store custom metadata so you can look up subscriptions by orgId
+    // Store orgId and userId as indexed fields for fast lookups
     await stripe.updateSubscriptionMetadata(ctx, {
       stripeSubscriptionId: args.subscriptionId,
+      orgId: args.orgId,      // Separate parameter for indexed lookup
+      userId: args.userId,     // Separate parameter for indexed lookup
       metadata: {
-        orgId: args.orgId,
-        userId: args.userId,
+        // Additional custom data can go here if needed
+        linkedAt: new Date().toISOString(),
       },
     });
   },
