@@ -1,10 +1,20 @@
-import { mutationGeneric, queryGeneric } from "convex/server";
+import { mutationGeneric, queryGeneric, httpActionGeneric } from "convex/server";
 import { v } from "convex/values";
 import StripeSDK from "stripe";
 import type { api } from "../component/_generated/api.js";
-import type { UseApi, RunMutationCtx, RunQueryCtx, ActionCtx } from "./types.js";
+import type {
+  UseApi,
+  RunMutationCtx,
+  RunQueryCtx,
+  ActionCtx,
+  HttpRouter,
+  RegisterRoutesConfig,
+  StripeEventHandlers
+} from "./types.js";
 
 export type StripeComponent = UseApi<typeof api>;
+
+export type { RegisterRoutesConfig, StripeEventHandlers };
 
 /**
  * Stripe Component Client
@@ -23,7 +33,7 @@ export class Stripe {
        */
       STRIPE_WEBHOOK_SECRET?: string;
     }
-  ) {}
+  ) { }
 
   // ============================================================================
   // CUSTOMER METHODS
@@ -438,6 +448,269 @@ export class Stripe {
         },
       }),
     };
+  }
+
+  // ============================================================================
+  // WEBHOOK REGISTRATION
+  // ============================================================================
+
+  /**
+   * Register webhook routes with the HTTP router.
+   * This simplifies webhook setup by handling signature verification
+   * and routing events to the appropriate handlers automatically.
+   * 
+   * @param http - The HTTP router instance
+   * @param config - Optional configuration for webhook path and event handlers
+   * 
+   * @example
+   * ```typescript
+   * // convex/http.ts
+   * import { httpRouter } from "convex/server";
+   * import { stripe } from "./stripe";
+   * 
+   * const http = httpRouter();
+   * 
+   * stripe.registerRoutes(http, {
+   *   events: {
+   *     "customer.subscription.updated": async (ctx, event) => {
+   *       // Your custom logic after default handling
+   *       console.log("Subscription updated:", event.data.object);
+   *     },
+   *   },
+   * });
+   * 
+   * export default http;
+   * ```
+   */
+  registerRoutes(http: HttpRouter, config?: RegisterRoutesConfig) {
+    const webhookPath = config?.webhookPath ?? "/stripe/webhook";
+    const eventHandlers = config?.events ?? {};
+
+    http.route({
+      path: webhookPath,
+      method: "POST",
+      handler: httpActionGeneric(async (ctx, req) => {
+        const webhookSecret = this.options?.STRIPE_WEBHOOK_SECRET || process.env.STRIPE_WEBHOOK_SECRET;
+
+        if (!webhookSecret) {
+          console.error("❌ STRIPE_WEBHOOK_SECRET is not set");
+          return new Response("Webhook secret not configured", { status: 500 });
+        }
+
+        const signature = req.headers.get("stripe-signature");
+        if (!signature) {
+          console.error("❌ No Stripe signature in headers");
+          return new Response("No signature provided", { status: 400 });
+        }
+
+        const body = await req.text();
+
+        if (!process.env.STRIPE_SECRET_KEY) {
+          console.error("❌ STRIPE_SECRET_KEY is not set");
+          return new Response("Stripe secret key not configured", { status: 500 });
+        }
+
+        const stripe = new StripeSDK(process.env.STRIPE_SECRET_KEY);
+
+        // Verify webhook signature
+        let event: StripeSDK.Event;
+        try {
+          event = await stripe.webhooks.constructEventAsync(body, signature, webhookSecret);
+        } catch (err) {
+          console.error("❌ Webhook signature verification failed:", err);
+          return new Response(
+            `Webhook signature verification failed: ${err instanceof Error ? err.message : String(err)}`,
+            { status: 400 }
+          );
+        }
+
+        // Process the event with default handlers
+        try {
+          await this.processEvent(ctx, event, stripe);
+
+          // Call custom event handler if provided
+          const eventType = event.type;
+          const customHandler: ((ctx: any, event: any) => Promise<void>) | undefined =
+            eventHandlers[eventType] as any;
+          if (customHandler) {
+            await customHandler(ctx, event);
+          }
+        } catch (error) {
+          console.error("❌ Error processing webhook:", error);
+          return new Response("Error processing webhook", { status: 500 });
+        }
+
+        return new Response(JSON.stringify({ received: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }),
+    });
+  }
+
+  /**
+   * Internal method to process Stripe webhook events with default handling.
+   * This handles the database syncing for all supported event types.
+   */
+  private async processEvent(
+    ctx: RunMutationCtx,
+    event: StripeSDK.Event,
+    stripe: StripeSDK
+  ): Promise<void> {
+    switch (event.type) {
+      case "customer.created":
+      case "customer.updated": {
+        const customer = event.data.object as StripeSDK.Customer;
+        const handler =
+          event.type === "customer.created"
+            ? this.component.public.handleCustomerCreated
+            : this.component.public.handleCustomerUpdated;
+
+        await ctx.runMutation(handler, {
+          stripeCustomerId: customer.id,
+          email: customer.email || undefined,
+          name: customer.name || undefined,
+          metadata: customer.metadata,
+        });
+        break;
+      }
+
+      case "customer.subscription.created": {
+        const subscription = event.data.object as any;
+        await ctx.runMutation(this.component.public.handleSubscriptionCreated, {
+          stripeSubscriptionId: subscription.id,
+          stripeCustomerId: subscription.customer as string,
+          status: subscription.status,
+          currentPeriodEnd: subscription.items.data[0]?.current_period_end || 0,
+          cancelAtPeriodEnd: subscription.cancel_at_period_end ?? false,
+          quantity: subscription.items.data[0]?.quantity ?? 1,
+          priceId: subscription.items.data[0]?.price.id || "",
+          metadata: subscription.metadata || {},
+        });
+        break;
+      }
+
+      case "customer.subscription.updated": {
+        const subscription = event.data.object as any;
+        await ctx.runMutation(this.component.public.handleSubscriptionUpdated, {
+          stripeSubscriptionId: subscription.id,
+          status: subscription.status,
+          currentPeriodEnd: subscription.items.data[0]?.current_period_end || 0,
+          cancelAtPeriodEnd: subscription.cancel_at_period_end ?? false,
+          quantity: subscription.items.data[0]?.quantity ?? 1,
+          metadata: subscription.metadata || {},
+        });
+        break;
+      }
+
+      case "customer.subscription.deleted": {
+        const subscription = event.data.object as StripeSDK.Subscription;
+        await ctx.runMutation(this.component.public.handleSubscriptionDeleted, {
+          stripeSubscriptionId: subscription.id,
+        });
+        break;
+      }
+
+      case "checkout.session.completed": {
+        const session = event.data.object as StripeSDK.Checkout.Session;
+        await ctx.runMutation(this.component.public.handleCheckoutSessionCompleted, {
+          stripeCheckoutSessionId: session.id,
+          stripeCustomerId: session.customer ? (session.customer as string) : undefined,
+          mode: session.mode || "payment",
+          metadata: session.metadata || undefined,
+        });
+
+        // For payment mode, link the payment to the customer if we have both
+        if (session.mode === "payment" && session.customer && session.payment_intent) {
+          await ctx.runMutation(this.component.public.updatePaymentCustomer, {
+            stripePaymentIntentId: session.payment_intent as string,
+            stripeCustomerId: session.customer as string,
+          });
+        }
+        break;
+      }
+
+      case "invoice.created":
+      case "invoice.finalized": {
+        const invoice = event.data.object as StripeSDK.Invoice;
+        await ctx.runMutation(this.component.public.handleInvoiceCreated, {
+          stripeInvoiceId: invoice.id,
+          stripeCustomerId: invoice.customer as string,
+          stripeSubscriptionId: (invoice as any).subscription as string | undefined,
+          status: invoice.status || "open",
+          amountDue: invoice.amount_due,
+          amountPaid: invoice.amount_paid,
+          created: invoice.created,
+        });
+        break;
+      }
+
+      case "invoice.paid":
+      case "invoice.payment_succeeded": {
+        const invoice = event.data.object as any;
+        await ctx.runMutation(this.component.public.handleInvoicePaid, {
+          stripeInvoiceId: invoice.id,
+          amountPaid: invoice.amount_paid,
+        });
+        break;
+      }
+
+      case "invoice.payment_failed": {
+        const invoice = event.data.object as StripeSDK.Invoice;
+        await ctx.runMutation(this.component.public.handleInvoicePaymentFailed, {
+          stripeInvoiceId: invoice.id,
+        });
+        break;
+      }
+
+      case "payment_intent.succeeded": {
+        const paymentIntent = event.data.object as any;
+
+        // Check if this is a subscription payment
+        if (paymentIntent.invoice) {
+          try {
+            const invoice = await stripe.invoices.retrieve(paymentIntent.invoice as string);
+            if ((invoice as any).subscription) {
+              console.log("⏭️ Skipping payment_intent.succeeded - subscription payment");
+              break;
+            }
+          } catch (err) {
+            console.error("Error checking invoice:", err);
+          }
+        }
+
+        // Check for recent subscriptions
+        if (paymentIntent.customer) {
+          const recentSubscriptions = await ctx.runQuery(this.component.public.listSubscriptions, {
+            stripeCustomerId: paymentIntent.customer as string,
+          });
+
+          const tenMinutesAgo = Date.now() / 1000 - 600;
+          const recentSubscription = recentSubscriptions.find((sub: any) =>
+            sub._creationTime > tenMinutesAgo
+          );
+
+          if (recentSubscription) {
+            console.log("⏭️ Skipping payment_intent.succeeded - recent subscription");
+            break;
+          }
+        }
+
+        await ctx.runMutation(this.component.public.handlePaymentIntentSucceeded, {
+          stripePaymentIntentId: paymentIntent.id,
+          stripeCustomerId: paymentIntent.customer ? (paymentIntent.customer as string) : undefined,
+          amount: paymentIntent.amount,
+          currency: paymentIntent.currency,
+          status: paymentIntent.status,
+          created: paymentIntent.created,
+          metadata: paymentIntent.metadata || {},
+        });
+        break;
+      }
+
+      default:
+        console.log(`ℹ️ Unhandled event type: ${event.type}`);
+    }
   }
 }
 

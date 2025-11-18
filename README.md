@@ -19,24 +19,41 @@ A production-ready Stripe component for Convex that handles payments, subscripti
 **Quick Example:**
 
 ```typescript
+// convex/stripe.ts
 import { Stripe } from "@micky/convex-stripe-component";
 import { components } from "./_generated/api";
 
-const stripe = new Stripe(components.stripe);
+export const stripe = new Stripe(components.stripe);
+
+// convex/payments.ts
+import { action } from "./_generated/server";
+import { v } from "convex/values";
+import { stripe } from "./stripe";
 
 // Create a subscription checkout
-const session = await stripe.createCheckoutSession(ctx, {
-  priceId: "price_xxx",
-  mode: "subscription",
-  successUrl: "http://localhost:5173/",
-  cancelUrl: "http://localhost:5173/",
-  metadata: { orgId: "org_123" }, // Custom lookup
+export const createSubscription = action({
+  args: { priceId: v.string(), orgId: v.string() },
+  handler: async (ctx, args) => {
+    const session = await stripe.createCheckoutSession(ctx, {
+      priceId: args.priceId,
+      mode: "subscription",
+      successUrl: "http://localhost:5173/success",
+      cancelUrl: "http://localhost:5173/",
+      metadata: { orgId: args.orgId }, // Custom lookup
+    });
+    return session.url;
+  },
 });
 
 // Update seats when your team grows
-await stripe.updateSubscriptionQuantity(ctx, {
-  stripeSubscriptionId: "sub_xxx",
-  quantity: 10,
+export const updateSeats = action({
+  args: { subscriptionId: v.string(), quantity: v.number() },
+  handler: async (ctx, args) => {
+    await stripe.updateSubscriptionQuantity(ctx, {
+      stripeSubscriptionId: args.subscriptionId,
+      quantity: args.quantity,
+    });
+  },
 });
 ```
 
@@ -89,177 +106,71 @@ Create a file in your `convex/` folder to initialize the Stripe client:
 import { Stripe } from "@micky/convex-stripe-component";
 import { components } from "./_generated/api";
 
-export const stripe = new Stripe(components.stripe);
+export const stripe = new Stripe(components.stripe, {
+  // Optional: You can explicitly pass secrets here, or set them as env variables
+  // STRIPE_WEBHOOK_SECRET: "..."
+});
 ```
 
-The `STRIPE_SECRET_KEY` environment variable is automatically read by the component's actions for secure server-side operations. The `STRIPE_WEBHOOK_SECRET` is used in your webhook handler (see step 3).
+The `STRIPE_SECRET_KEY` environment variable is automatically read by the component's actions for secure server-side operations. The `STRIPE_WEBHOOK_SECRET` is used in your webhook handler to verify signatures. It defaults to `process.env.STRIPE_WEBHOOK_SECRET` but can be overridden in the constructor options.
 
 > **🔒 Security Note**: The component's actions (like `createCheckoutSession`, `cancelSubscription`, etc.) automatically read the Stripe API key from server-side environment variables. This means your secret key is never exposed to the client and cannot be intercepted. All Stripe API calls happen securely in the Convex backend.
 
 ### 3. Set up webhook endpoint
 
-Since Convex components cannot define HTTP actions, you need to set up the webhook handler in your app's `convex/http.ts`:
+Register webhooks in your app's `convex/http.ts` using the `registerRoutes()` method:
 
 ```ts
 // convex/http.ts
 import { httpRouter } from "convex/server";
-import { httpAction } from "./_generated/server";
-import { components } from "./_generated/api";
-import Stripe from "stripe";
+import { stripe } from "./stripe";
 
 const http = httpRouter();
 
-http.route({
-  path: "/stripe/webhook",
-  method: "POST",
-  handler: httpAction(async (ctx, req) => {
-    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
-    if (!webhookSecret) {
-      return new Response("Webhook secret not configured", { status: 500 });
-    }
+stripe.registerRoutes(http);
 
-    const signature = req.headers.get("stripe-signature");
-    if (!signature) {
-      return new Response("No signature provided", { status: 400 });
-    }
+export default http;
+```
 
-    const body = await req.text();
-    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
+The component automatically handles webhook signature verification and database syncing for all Stripe events.
 
-    let event: Stripe.Event;
-    try {
-      event = await stripe.webhooks.constructEventAsync(body, signature, webhookSecret);
-    } catch (err) {
-      return new Response("Webhook signature verification failed", { status: 400 });
-    }
+#### Optional: Custom event handlers
 
-    // Route events to component handlers
-    switch (event.type) {
-      case "customer.created":
-      case "customer.updated": {
-        const customer = event.data.object as Stripe.Customer;
-        const handler = event.type === "customer.created"
-          ? components.stripe.public.handleCustomerCreated
-          : components.stripe.public.handleCustomerUpdated;
-        
-        await ctx.runMutation(handler, {
-          stripeCustomerId: customer.id,
-          email: customer.email || undefined,
-          name: customer.name || undefined,
-          metadata: customer.metadata,
-        });
-        break;
-      }
+You can run custom logic after the default event handling:
 
-      case "customer.subscription.created": {
-        const subscription = event.data.object as any;
-        await ctx.runMutation(components.stripe.public.handleSubscriptionCreated, {
-          stripeSubscriptionId: subscription.id,
-          stripeCustomerId: subscription.customer as string,
-          status: subscription.status,
-          currentPeriodEnd: subscription.items.data[0]?.current_period_end || 0,
-          cancelAtPeriodEnd: subscription.cancel_at_period_end ?? false,
-          quantity: subscription.items.data[0]?.quantity ?? 1,
-          priceId: subscription.items.data[0]?.price.id || "",
-          metadata: subscription.metadata || {},
-        });
-        break;
-      }
+```ts
+// convex/http.ts
+import { httpRouter } from "convex/server";
+import { stripe } from "./stripe";
 
-      case "customer.subscription.updated": {
-        const subscription = event.data.object as any;
-        await ctx.runMutation(components.stripe.public.handleSubscriptionUpdated, {
-          stripeSubscriptionId: subscription.id,
-          status: subscription.status,
-          currentPeriodEnd: subscription.items.data[0]?.current_period_end || 0,
-          cancelAtPeriodEnd: subscription.cancel_at_period_end ?? false,
-          quantity: subscription.items.data[0]?.quantity ?? 1,
-          metadata: subscription.metadata || {},
-        });
-        break;
-      }
+const http = httpRouter();
 
-      case "customer.subscription.deleted": {
-        const subscription = event.data.object as Stripe.Subscription;
-        await ctx.runMutation(components.stripe.public.handleSubscriptionDeleted, {
-          stripeSubscriptionId: subscription.id,
-        });
-        break;
-      }
-
-      case "checkout.session.completed": {
-        const session = event.data.object as Stripe.Checkout.Session;
-        await ctx.runMutation(components.stripe.public.handleCheckoutSessionCompleted, {
-          stripeCheckoutSessionId: session.id,
-          stripeCustomerId: session.customer ? (session.customer as string) : undefined,
-          mode: session.mode || "payment",
-          metadata: session.metadata || undefined,
-        });
-        
-        // For payment mode, link the payment to the customer if we have both
-        if (session.mode === "payment" && session.customer && session.payment_intent) {
-          await ctx.runMutation(components.stripe.public.updatePaymentCustomer, {
-            stripePaymentIntentId: session.payment_intent as string,
-            stripeCustomerId: session.customer as string,
-          });
-        }
-        break;
-      }
-
-      case "invoice.created":
-      case "invoice.finalized": {
-        const invoice = event.data.object as Stripe.Invoice;
-        await ctx.runMutation(components.stripe.public.handleInvoiceCreated, {
-          stripeInvoiceId: invoice.id,
-          stripeCustomerId: invoice.customer as string,
-          stripeSubscriptionId: (invoice as any).subscription as string | undefined,
-          status: invoice.status || "open",
-          amountDue: invoice.amount_due,
-          amountPaid: invoice.amount_paid,
-          created: invoice.created,
-        });
-        break;
-      }
-
-      case "invoice.paid":
-      case "invoice.payment_succeeded": {
-        const invoice = event.data.object as any;
-        await ctx.runMutation(components.stripe.public.handleInvoicePaid, {
-          stripeInvoiceId: invoice.id,
-          amountPaid: invoice.amount_paid,
-        });
-        break;
-      }
-
-      case "invoice.payment_failed": {
-        const invoice = event.data.object as Stripe.Invoice;
-        await ctx.runMutation(components.stripe.public.handleInvoicePaymentFailed, {
-          stripeInvoiceId: invoice.id,
-        });
-        break;
-      }
-
-      case "payment_intent.succeeded": {
-        const paymentIntent = event.data.object as Stripe.PaymentIntent;
-        await ctx.runMutation(components.stripe.public.handlePaymentIntentSucceeded, {
-          stripePaymentIntentId: paymentIntent.id,
-          stripeCustomerId: paymentIntent.customer ? (paymentIntent.customer as string) : undefined,
-          amount: paymentIntent.amount,
-          currency: paymentIntent.currency,
-          status: paymentIntent.status,
-          created: paymentIntent.created,
-          metadata: paymentIntent.metadata || {},
-        });
-        break;
-      }
-    }
-
-    return new Response(JSON.stringify({ received: true }), { status: 200 });
-  }),
+stripe.registerRoutes(http, {
+  // Optional: Configure the webhook path (defaults to /stripe/webhook)
+  webhookPath: "/stripe/webhook",
+  
+  // Optional: Handle specific events with custom logic
+  events: {
+    "customer.subscription.updated": async (ctx, event) => {
+      // Your custom logic runs after the component syncs to the database
+      const subscription = event.data.object;
+      console.log("Subscription updated:", subscription.id);
+      
+      // You can call other mutations here
+      // await ctx.runMutation(...);
+    },
+    "payment_intent.succeeded": async (ctx, event) => {
+      // Handle one-time payment success
+      const paymentIntent = event.data.object;
+      console.log("Payment succeeded:", paymentIntent.id);
+    },
+  },
 });
 
 export default http;
 ```
+
+> **Note**: The component handles all database syncing automatically. Your custom handlers run *after* the default processing, so the data is already in your database when your handler executes.
 
 ### 4. Configure webhooks in Stripe
 
@@ -314,17 +225,16 @@ export const createSubscriptionCheckout = action({
   },
 });
 
-// Get the current user's subscriptions
+// Get the current user's subscriptions using indexed lookup
 export const getMySubscriptions = query({
+  args: {},
+  returns: v.array(v.any()),
   handler: async (ctx) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) return [];
     
-    // Query subscriptions and filter by userId in metadata
-    const allData = await ctx.runQuery(components.stripe.public.getAllData, {});
-    return allData.subscriptions.filter(
-      (sub: any) => sub.metadata?.userId === identity.subject
-    );
+    // Use indexed query for efficient lookup
+    return await stripe.listSubscriptionsByUserId(ctx, identity.subject);
   },
 });
 
@@ -426,6 +336,14 @@ export const getUserPayments = query({
     return await stripe.listPaymentsByUserId(ctx, args.userId);
   },
 });
+
+// List payments by organization (using indexed lookup)
+export const getOrgPayments = query({
+  args: { orgId: v.string() },
+  handler: async (ctx, args) => {
+    return await stripe.listPaymentsByOrgId(ctx, args.orgId);
+  },
+});
 ```
 
 ### Seat-Based Pricing
@@ -521,12 +439,21 @@ export const getUserSubscriptions = query({
     return await stripe.listSubscriptionsByUserId(ctx, args.userId);
   },
 });
+
+// Payments also support indexed lookups by orgId and userId
+export const getOrgPayments = query({
+  args: { orgId: v.string() },
+  handler: async (ctx, args) => {
+    return await stripe.listPaymentsByOrgId(ctx, args.orgId);
+  },
+});
 ```
 
 **How it works:**
-- `orgId` and `userId` are stored as top-level fields with database indexes
+- `orgId` and `userId` are stored as top-level fields with database indexes for both subscriptions and payments
 - The webhook handlers automatically extract these from `metadata.orgId` and `metadata.userId` when syncing from Stripe
-- You can query them efficiently using `getSubscriptionByOrgId()` or `listSubscriptionsByUserId()`
+- You can query subscriptions efficiently using `getSubscriptionByOrgId()` or `listSubscriptionsByUserId()`
+- You can query payments efficiently using `listPaymentsByOrgId()` or `listPaymentsByUserId()`
 - Additional custom data can still be stored in the `metadata` field
 
 ### Customer Portal
@@ -611,6 +538,8 @@ export const getCustomerData = query({
 - `getPayment(ctx, stripePaymentIntentId)` - Get payment by payment intent ID
 - `listPayments(ctx, stripeCustomerId)` - List all payments for a customer
 - `listPaymentsByUserId(ctx, userId)` - List all payments for a user ID (indexed lookup)
+- `listPaymentsByOrgId(ctx, orgId)` - List all payments for an organization ID (indexed lookup)
+- `updatePaymentCustomer(ctx, { stripePaymentIntentId, stripeCustomerId })` - Update payment customer ID
 
 #### Invoices
 - `listInvoices(ctx, stripeCustomerId)` - List invoices for a customer

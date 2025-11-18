@@ -23,7 +23,9 @@ import { components } from "./_generated/api";
 import { Stripe } from "@micky/convex-stripe-component";
 import { v } from "convex/values";
 
-const stripe = new Stripe(components.stripe);
+export const stripe = new Stripe(components.stripe , {
+  STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET,
+});
 
 // ============================================================================
 // LIVE DATABASE VIEWER QUERIES

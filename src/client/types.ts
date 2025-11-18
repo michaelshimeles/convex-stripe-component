@@ -5,8 +5,10 @@ import type {
   FunctionReturnType,
   StorageActionWriter,
   StorageReader,
+  HttpRouter,
 } from "convex/server";
 import type { GenericId } from "convex/values";
+import type Stripe from "stripe";
 
 // Type utils follow
 
@@ -65,3 +67,50 @@ export type UseApi<API> = Expand<{
       >
     : UseApi<API[mod]>;
 }>;
+
+// Webhook Event Handler Types
+
+/**
+ * Context passed to webhook event handlers.
+ * This is a mutation context since handlers need to modify data.
+ */
+export type WebhookEventContext = RunMutationCtx;
+
+/**
+ * Handler function for a specific Stripe webhook event.
+ * Receives the mutation context and the full Stripe event object.
+ */
+export type StripeEventHandler<T extends Stripe.Event.Type = Stripe.Event.Type> = (
+  ctx: WebhookEventContext,
+  event: Stripe.Event & { type: T }
+) => Promise<void>;
+
+/**
+ * Map of event types to their handlers.
+ * Users can provide handlers for any Stripe webhook event type.
+ */
+export type StripeEventHandlers = {
+  [K in Stripe.Event.Type]?: StripeEventHandler<K>;
+};
+
+/**
+ * Configuration for webhook registration.
+ */
+export type RegisterRoutesConfig = {
+  /**
+   * Optional webhook path. Defaults to "/stripe/webhook"
+   */
+  webhookPath?: string;
+  
+  /**
+   * Optional event handlers that run after default processing.
+   * The component will handle database syncing automatically,
+   * and then call your custom handlers.
+   */
+  events?: StripeEventHandlers;
+};
+
+/**
+ * Type for the HttpRouter to be used in registerRoutes
+ */
+export type { HttpRouter };

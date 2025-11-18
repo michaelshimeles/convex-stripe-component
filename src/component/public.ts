@@ -315,6 +315,7 @@ export const listInvoices = query({
 
 /**
  * Get all data for live database view (for demo/debugging).
+ * This is for demo purposes only and will be removed in prod.
  */
 export const getAllData = query({
   args: {},
