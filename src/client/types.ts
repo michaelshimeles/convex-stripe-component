@@ -108,6 +108,12 @@ export type RegisterRoutesConfig = {
    * and then call your custom handlers.
    */
   events?: StripeEventHandlers;
+
+  /**
+   * Optional generic event handler that runs for all events.
+   * This runs after default processing and before specific event handlers.
+   */
+  onEvent?: StripeEventHandler;
 };
 
 /**

@@ -27,6 +27,26 @@ stripe.registerRoutes(http, {
       });
     },
   },
+  onEvent: async (ctx: any, event: Stripe.Event) => {
+    // Log all events for monitoring/debugging
+    console.log(`📊 Event received: ${event.type}`, {
+      id: event.id,
+      created: new Date(event.created * 1000).toISOString(),
+    });
+    
+    // Example: Send to analytics service
+    // await ctx.runMutation(internal.analytics.trackEvent, {
+    //   eventType: event.type,
+    //   eventId: event.id,
+    // });
+    
+    // Example: Update audit log
+    // await ctx.runMutation(internal.audit.logWebhookEvent, {
+    //   eventType: event.type,
+    //   eventData: event.data,
+    // });
+  },
+
 });
 
 export default http;

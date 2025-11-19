@@ -528,6 +528,11 @@ export class Stripe {
         try {
           await this.processEvent(ctx, event, stripe);
 
+          // Call generic event handler if provided
+          if (config?.onEvent) {
+            await config.onEvent(ctx, event);
+          }
+
           // Call custom event handler if provided
           const eventType = event.type;
           const customHandler: ((ctx: any, event: any) => Promise<void>) | undefined =
