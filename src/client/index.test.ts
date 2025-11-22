@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { Stripe } from "./index.js";
+import { StripeSubscriptions } from "./index.js";
 import type { DataModelFromSchemaDefinition } from "convex/server";
 import {
   anyApi,
@@ -24,7 +24,7 @@ const query = queryGeneric as QueryBuilder<DataModel, "public">;
 const mutation = mutationGeneric as MutationBuilder<DataModel, "public">;
 const action = actionGeneric as ActionBuilder<DataModel, "public">;
 
-const stripe = new Stripe(components.stripe);
+const stripe = new StripeSubscriptions(components.stripe);
 
 export const testGetCustomer = query({
   args: { stripeCustomerId: v.string() },
@@ -79,20 +79,20 @@ describe("Stripe thick client", () => {
   });
 
   test("should create Stripe client", async () => {
-    const c = new Stripe(components.stripe);
+    const c = new StripeSubscriptions(components.stripe);
     expect(c).toBeDefined();
     expect(c.component).toBeDefined();
   });
 
   test("should work with environment variables", async () => {
-    const c = new Stripe(components.stripe, {
+    const c = new StripeSubscriptions(components.stripe, {
       STRIPE_WEBHOOK_SECRET: "whsec_123",
     });
     expect(c.options?.STRIPE_WEBHOOK_SECRET).toBe("whsec_123");
   });
 
   test("should provide api() helper for re-export", async () => {
-    const c = new Stripe(components.stripe);
+    const c = new StripeSubscriptions(components.stripe);
     const apiHelpers = c.api();
     expect(apiHelpers.getCustomer).toBeDefined();
     expect(apiHelpers.getSubscription).toBeDefined();

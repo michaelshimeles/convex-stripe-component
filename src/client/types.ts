@@ -80,7 +80,9 @@ export type WebhookEventContext = RunMutationCtx;
  * Handler function for a specific Stripe webhook event.
  * Receives the mutation context and the full Stripe event object.
  */
-export type StripeEventHandler<T extends Stripe.Event.Type = Stripe.Event.Type> = (
+export type StripeEventHandler<
+  T extends Stripe.Event.Type = Stripe.Event.Type,
+> = (
   ctx: WebhookEventContext,
   event: Stripe.Event & { type: T }
 ) => Promise<void>;
@@ -101,7 +103,7 @@ export type RegisterRoutesConfig = {
    * Optional webhook path. Defaults to "/stripe/webhook"
    */
   webhookPath?: string;
-  
+
   /**
    * Optional event handlers that run after default processing.
    * The component will handle database syncing automatically,
@@ -114,6 +116,11 @@ export type RegisterRoutesConfig = {
    * This runs after default processing and before specific event handlers.
    */
   onEvent?: StripeEventHandler;
+  /**
+   * Stripe webhook secret for signature verification.
+   * Defaults to process.env.STRIPE_WEBHOOK_SECRET
+   */
+  STRIPE_WEBHOOK_SECRET?: string;
 };
 
 /**
