@@ -1,7 +1,7 @@
 import { httpActionGeneric } from "convex/server";
 import StripeSDK from "stripe";
 import type {
-  RunMutationCtx,
+  MutationCtx,
   ActionCtx,
   HttpRouter,
   RegisterRoutesConfig,
@@ -287,7 +287,7 @@ export function registerRoutes(
  * This handles the database syncing for all supported event types.
  */
 async function processEvent(
-  ctx: RunMutationCtx,
+  ctx: MutationCtx | ActionCtx,
   component: ComponentApi,
   event: StripeSDK.Event,
   stripe: StripeSDK

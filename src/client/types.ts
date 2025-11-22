@@ -1,41 +1,23 @@
 import type {
-  Expand,
-  FunctionArgs,
-  FunctionReference,
-  FunctionReturnType,
-  StorageActionWriter,
-  StorageReader,
   HttpRouter,
+  GenericActionCtx,
+  GenericMutationCtx,
+  GenericDataModel,
+  GenericQueryCtx,
 } from "convex/server";
-import type { GenericId } from "convex/values";
 import type Stripe from "stripe";
 
 // Type utils follow
 
-export type RunQueryCtx = {
-  runQuery: <Query extends FunctionReference<"query", "internal">>(
-    query: Query,
-    args: FunctionArgs<Query>
-  ) => Promise<FunctionReturnType<Query>>;
-};
-export type RunMutationCtx = RunQueryCtx & {
-  runMutation: <Mutation extends FunctionReference<"mutation", "internal">>(
-    mutation: Mutation,
-    args: FunctionArgs<Mutation>
-  ) => Promise<FunctionReturnType<Mutation>>;
-};
-export type RunActionCtx = RunMutationCtx & {
-  runAction<Action extends FunctionReference<"action", "internal">>(
-    action: Action,
-    args: FunctionArgs<Action>
-  ): Promise<FunctionReturnType<Action>>;
-};
-export type ActionCtx = RunActionCtx & {
-  storage: StorageActionWriter;
-};
-export type QueryCtx = RunQueryCtx & {
-  storage: StorageReader;
-};
+export type QueryCtx = Pick<GenericQueryCtx<GenericDataModel>, "runQuery">;
+export type MutationCtx = Pick<
+  GenericMutationCtx<GenericDataModel>,
+  "runQuery" | "runMutation"
+>;
+export type ActionCtx = Pick<
+  GenericActionCtx<GenericDataModel>,
+  "runQuery" | "runMutation" | "runAction"
+>;
 
 // Webhook Event Handler Types
 
@@ -43,7 +25,7 @@ export type QueryCtx = RunQueryCtx & {
  * Context passed to webhook event handlers.
  * This is a mutation context since handlers need to modify data.
  */
-export type WebhookEventContext = RunMutationCtx;
+export type WebhookEventContext = MutationCtx;
 
 /**
  * Handler function for a specific Stripe webhook event.
