@@ -22,21 +22,12 @@ export type ActionCtx = Pick<
 // Webhook Event Handler Types
 
 /**
- * Context passed to webhook event handlers.
- * This is a mutation context since handlers need to modify data.
- */
-export type WebhookEventContext = MutationCtx;
-
-/**
  * Handler function for a specific Stripe webhook event.
  * Receives the mutation context and the full Stripe event object.
  */
 export type StripeEventHandler<
   T extends Stripe.Event.Type = Stripe.Event.Type,
-> = (
-  ctx: WebhookEventContext,
-  event: Stripe.Event & { type: T }
-) => Promise<void>;
+> = (ctx: ActionCtx, event: Stripe.Event & { type: T }) => Promise<void>;
 
 /**
  * Map of event types to their handlers.
