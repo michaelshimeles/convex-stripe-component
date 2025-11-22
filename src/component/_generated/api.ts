@@ -8,19 +8,20 @@
  * @module
  */
 
-import type * as http from "../http.js";
-import type * as stripe from "../stripe.js";
+import type * as private_ from "../private.js";
+import type * as public_ from "../public.js";
 
 import type {
   ApiFromModules,
   FilterApi,
   FunctionReference,
 } from "convex/server";
+import { anyApi, componentsGeneric } from "convex/server";
 
-declare const fullApi: ApiFromModules<{
-  http: typeof http;
-  stripe: typeof stripe;
-}>;
+const fullApi: ApiFromModules<{
+  private: typeof private_;
+  public: typeof public_;
+}> = anyApi as any;
 
 /**
  * A utility for referencing Convex functions in your app's public API.
@@ -30,10 +31,10 @@ declare const fullApi: ApiFromModules<{
  * const myFunctionReference = api.myModule.myFunction;
  * ```
  */
-export declare const api: FilterApi<
+export const api: FilterApi<
   typeof fullApi,
   FunctionReference<any, "public">
->;
+> = anyApi as any;
 
 /**
  * A utility for referencing Convex functions in your app's internal API.
@@ -43,11 +44,9 @@ export declare const api: FilterApi<
  * const myFunctionReference = internal.myModule.myFunction;
  * ```
  */
-export declare const internal: FilterApi<
+export const internal: FilterApi<
   typeof fullApi,
   FunctionReference<any, "internal">
->;
+> = anyApi as any;
 
-export declare const components: {
-  stripe: import("@micky/convex-stripe-component/_generated/component.js").ComponentApi<"stripe">;
-};
+export const components = componentsGeneric() as unknown as {};

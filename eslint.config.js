@@ -55,6 +55,7 @@ export default defineConfig([
   {
     rules: {
       "@typescript-eslint/no-floating-promises": "error",
+      "@typescript-eslint/no-explicit-any": "off",
       "@typescript-eslint/consistent-type-imports": [
         "error",
         {

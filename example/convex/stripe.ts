@@ -1,31 +1,29 @@
 /**
  * ⚠️ EXAMPLE CODE - NOT FOR PRODUCTION USE ⚠️
- * 
+ *
  * This file contains example implementations of Stripe integration functions.
  * These functions are provided for demonstration purposes only.
- * 
+ *
  * SECURITY WARNING:
  * - These functions do NOT include authentication or authorization checks
  * - They expose sensitive data (customers, subscriptions, payments) publicly
  * - Anyone can call these functions and access/modify Stripe data
- * 
+ *
  * BEFORE USING IN PRODUCTION:
  * 1. Add authentication checks using `ctx.auth.getUserIdentity()`
  * 2. Add authorization checks to verify users can only access their own data
  * 3. Remove or restrict `getLiveData` (exposes all data)
  * 4. Verify ownership before allowing modifications (cancel, update, etc.)
- * 
+ *
  * See README.md "Integrating with Authentication" section for examples.
  */
 
 import { action, mutation, query } from "./_generated/server";
 import { components } from "./_generated/api";
-import { Stripe } from "@micky/convex-stripe-component";
+import { StripeSubscriptions } from "@micky/convex-stripe-component";
 import { v } from "convex/values";
 
-export const stripe = new Stripe(components.stripe, {
-  STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET,
-});
+const stripe = new StripeSubscriptions(components.stripe, {});
 
 // ============================================================================
 // LIVE DATABASE VIEWER QUERIES
@@ -37,9 +35,10 @@ export const stripe = new Stripe(components.stripe, {
  * DO NOT use this in production without proper access controls.
  */
 export const getLiveData = query({
+  args: {},
   handler: async (ctx) => {
     // Get all data from the Stripe component
-    const data = await ctx.runQuery(stripe.component.public.getAllData, {});
+    const data = await ctx.runQuery(components.stripe.public.getAllData, {});
 
     return {
       customers: data.customers,
@@ -50,9 +49,12 @@ export const getLiveData = query({
       stats: {
         totalCustomers: data.customers.length,
         totalSubscriptions: data.subscriptions.length,
-        activeSubscriptions: data.subscriptions.filter((s: any) => s.status === "active").length,
+        activeSubscriptions: data.subscriptions.filter(
+          (s: any) => s.status === "active"
+        ).length,
         totalInvoices: data.invoices.length,
-        paidInvoices: data.invoices.filter((i: any) => i.status === "paid").length,
+        paidInvoices: data.invoices.filter((i: any) => i.status === "paid")
+          .length,
       },
     };
   },
@@ -65,7 +67,7 @@ export const getLiveData = query({
 /**
  * Create a checkout session for a subscription.
  * This would typically be called from your app when a user clicks "Subscribe".
- * 
+ *
  * ⚠️ SECURITY: Add authentication check before using in production:
  * ```ts
  * const identity = await ctx.auth.getUserIdentity();
@@ -125,7 +127,7 @@ export const createPaymentCheckout = action({
 /**
  * Update the seat count for a subscription.
  * Call this when users are added/removed from an organization.
- * 
+ *
  * ⚠️ SECURITY: Add authentication and authorization checks before using in production.
  * Verify the user has permission to modify this subscription.
  */
@@ -149,7 +151,7 @@ export const updateSeats = action({
 
 /**
  * After a subscription is created (via webhook), link it to your org.
- * 
+ *
  * ⚠️ SECURITY: Add authentication check before using in production.
  * Verify the user has permission to link subscriptions to this org.
  */
@@ -161,10 +163,10 @@ export const linkSubscriptionToOrg = mutation({
   },
   handler: async (ctx, args) => {
     // Store orgId and userId as indexed fields for fast lookups
-    await stripe.updateSubscriptionMetadata(ctx, {
+    await ctx.runMutation(components.stripe.public.updateSubscriptionMetadata, {
       stripeSubscriptionId: args.subscriptionId,
-      orgId: args.orgId,      // Separate parameter for indexed lookup
-      userId: args.userId,     // Separate parameter for indexed lookup
+      orgId: args.orgId, // Separate parameter for indexed lookup
+      userId: args.userId, // Separate parameter for indexed lookup
       metadata: {
         // Additional custom data can go here if needed
         linkedAt: new Date().toISOString(),
@@ -186,7 +188,9 @@ export const getSubscriptionInfo = query({
     subscriptionId: v.string(),
   },
   handler: async (ctx, args) => {
-    return await stripe.getSubscription(ctx, args.subscriptionId);
+    return await ctx.runQuery(components.stripe.public.getSubscription, {
+      stripeSubscriptionId: args.subscriptionId,
+    });
   },
 });
 
@@ -218,7 +222,7 @@ export const cancelSubscription = action({
 /**
  * Generate a link to the Stripe Customer Portal where users can
  * manage their subscriptions, update payment methods, etc.
- * 
+ *
  * ⚠️ SECURITY: Add authorization check before using in production.
  * Verify the user owns this customer ID.
  */
@@ -247,9 +251,18 @@ export const getCustomerData = query({
     customerId: v.string(),
   },
   handler: async (ctx, args) => {
-    const customer = await stripe.getCustomer(ctx, args.customerId);
-    const subscriptions = await stripe.listSubscriptions(ctx, args.customerId);
-    const invoices = await stripe.listInvoices(ctx, args.customerId);
+    const customer = await ctx.runQuery(components.stripe.public.getCustomer, {
+      stripeCustomerId: args.customerId,
+    });
+    const subscriptions = await ctx.runQuery(
+      components.stripe.public.listSubscriptions,
+      {
+        stripeCustomerId: args.customerId,
+      }
+    );
+    const invoices = await ctx.runQuery(components.stripe.public.listInvoices, {
+      stripeCustomerId: args.customerId,
+    });
 
     return {
       customer,
@@ -258,21 +271,3 @@ export const getCustomerData = query({
     };
   },
 });
-
-// ============================================================================
-// Direct re-export of component's API (optional pattern)
-// ============================================================================
-
-/**
- * ⚠️ SECURITY WARNING: These are direct re-exports of the component's public API.
- * They do NOT include authentication or authorization checks.
- * Wrap these functions with your own authenticated functions in production.
- */
-export const {
-  getCustomer,
-  getSubscription,
-  listSubscriptions,
-  listInvoices,
-  createOrUpdateCustomer,
-  updateSubscriptionMetadata,
-} = stripe.api();
