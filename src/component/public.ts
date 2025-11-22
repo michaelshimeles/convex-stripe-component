@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server.js";
+import schema from "./schema.js";
 
 // ============================================================================
 // PUBLIC QUERIES
@@ -11,13 +12,9 @@ import { mutation, query } from "./_generated/server.js";
 export const getCustomer = query({
   args: { stripeCustomerId: v.string() },
   returns: v.union(
-    v.object({
+    schema.tables.customers.validator.extend({
       _id: v.id("customers"),
       _creationTime: v.number(),
-      stripeCustomerId: v.string(),
-      email: v.optional(v.string()),
-      name: v.optional(v.string()),
-      metadata: v.optional(v.any()),
     }),
     v.null()
   ),
@@ -38,19 +35,9 @@ export const getCustomer = query({
 export const getSubscription = query({
   args: { stripeSubscriptionId: v.string() },
   returns: v.union(
-    v.object({
+    schema.tables.subscriptions.validator.extend({
       _id: v.id("subscriptions"),
       _creationTime: v.number(),
-      stripeSubscriptionId: v.string(),
-      stripeCustomerId: v.string(),
-      status: v.string(),
-      currentPeriodEnd: v.number(),
-      cancelAtPeriodEnd: v.boolean(),
-      quantity: v.optional(v.number()),
-      priceId: v.string(),
-      metadata: v.optional(v.any()),
-      orgId: v.optional(v.string()),
-      userId: v.optional(v.string()),
     }),
     v.null()
   ),
@@ -71,19 +58,9 @@ export const getSubscription = query({
 export const listSubscriptions = query({
   args: { stripeCustomerId: v.string() },
   returns: v.array(
-    v.object({
+    schema.tables.subscriptions.validator.extend({
       _id: v.id("subscriptions"),
       _creationTime: v.number(),
-      stripeSubscriptionId: v.string(),
-      stripeCustomerId: v.string(),
-      status: v.string(),
-      currentPeriodEnd: v.number(),
-      cancelAtPeriodEnd: v.boolean(),
-      quantity: v.optional(v.number()),
-      priceId: v.string(),
-      metadata: v.optional(v.any()),
-      orgId: v.optional(v.string()),
-      userId: v.optional(v.string()),
     })
   ),
   handler: async (ctx, args) => {
@@ -104,19 +81,9 @@ export const listSubscriptions = query({
 export const getSubscriptionByOrgId = query({
   args: { orgId: v.string() },
   returns: v.union(
-    v.object({
+    schema.tables.subscriptions.validator.extend({
       _id: v.id("subscriptions"),
       _creationTime: v.number(),
-      stripeSubscriptionId: v.string(),
-      stripeCustomerId: v.string(),
-      status: v.string(),
-      currentPeriodEnd: v.number(),
-      cancelAtPeriodEnd: v.boolean(),
-      quantity: v.optional(v.number()),
-      priceId: v.string(),
-      metadata: v.optional(v.any()),
-      orgId: v.optional(v.string()),
-      userId: v.optional(v.string()),
     }),
     v.null()
   ),
@@ -136,19 +103,9 @@ export const getSubscriptionByOrgId = query({
 export const listSubscriptionsByUserId = query({
   args: { userId: v.string() },
   returns: v.array(
-    v.object({
+    schema.tables.subscriptions.validator.extend({
       _id: v.id("subscriptions"),
       _creationTime: v.number(),
-      stripeSubscriptionId: v.string(),
-      stripeCustomerId: v.string(),
-      status: v.string(),
-      currentPeriodEnd: v.number(),
-      cancelAtPeriodEnd: v.boolean(),
-      quantity: v.optional(v.number()),
-      priceId: v.string(),
-      metadata: v.optional(v.any()),
-      orgId: v.optional(v.string()),
-      userId: v.optional(v.string()),
     })
   ),
   handler: async (ctx, args) => {
@@ -166,18 +123,9 @@ export const listSubscriptionsByUserId = query({
 export const getPayment = query({
   args: { stripePaymentIntentId: v.string() },
   returns: v.union(
-    v.object({
+    schema.tables.payments.validator.extend({
       _id: v.id("payments"),
       _creationTime: v.number(),
-      stripePaymentIntentId: v.string(),
-      stripeCustomerId: v.optional(v.string()),
-      amount: v.number(),
-      currency: v.string(),
-      status: v.string(),
-      created: v.number(),
-      metadata: v.optional(v.any()),
-      orgId: v.optional(v.string()),
-      userId: v.optional(v.string()),
     }),
     v.null()
   ),
@@ -198,18 +146,9 @@ export const getPayment = query({
 export const listPayments = query({
   args: { stripeCustomerId: v.string() },
   returns: v.array(
-    v.object({
+    schema.tables.payments.validator.extend({
       _id: v.id("payments"),
       _creationTime: v.number(),
-      stripePaymentIntentId: v.string(),
-      stripeCustomerId: v.optional(v.string()),
-      amount: v.number(),
-      currency: v.string(),
-      status: v.string(),
-      created: v.number(),
-      metadata: v.optional(v.any()),
-      orgId: v.optional(v.string()),
-      userId: v.optional(v.string()),
     })
   ),
   handler: async (ctx, args) => {
@@ -229,18 +168,9 @@ export const listPayments = query({
 export const listPaymentsByUserId = query({
   args: { userId: v.string() },
   returns: v.array(
-    v.object({
+    schema.tables.payments.validator.extend({
       _id: v.id("payments"),
       _creationTime: v.number(),
-      stripePaymentIntentId: v.string(),
-      stripeCustomerId: v.optional(v.string()),
-      amount: v.number(),
-      currency: v.string(),
-      status: v.string(),
-      created: v.number(),
-      metadata: v.optional(v.any()),
-      orgId: v.optional(v.string()),
-      userId: v.optional(v.string()),
     })
   ),
   handler: async (ctx, args) => {
@@ -258,18 +188,9 @@ export const listPaymentsByUserId = query({
 export const listPaymentsByOrgId = query({
   args: { orgId: v.string() },
   returns: v.array(
-    v.object({
+    schema.tables.payments.validator.extend({
       _id: v.id("payments"),
       _creationTime: v.number(),
-      stripePaymentIntentId: v.string(),
-      stripeCustomerId: v.optional(v.string()),
-      amount: v.number(),
-      currency: v.string(),
-      status: v.string(),
-      created: v.number(),
-      metadata: v.optional(v.any()),
-      orgId: v.optional(v.string()),
-      userId: v.optional(v.string()),
     })
   ),
   handler: async (ctx, args) => {
@@ -287,16 +208,9 @@ export const listPaymentsByOrgId = query({
 export const listInvoices = query({
   args: { stripeCustomerId: v.string() },
   returns: v.array(
-    v.object({
+    schema.tables.invoices.validator.extend({
       _id: v.id("invoices"),
       _creationTime: v.number(),
-      stripeInvoiceId: v.string(),
-      stripeCustomerId: v.string(),
-      stripeSubscriptionId: v.optional(v.string()),
-      status: v.string(),
-      amountDue: v.number(),
-      amountPaid: v.number(),
-      created: v.number(),
     })
   ),
   handler: async (ctx, args) => {
