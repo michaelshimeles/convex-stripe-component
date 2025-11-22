@@ -26,17 +26,20 @@ export type { RegisterRoutesConfig, StripeEventHandlers };
  * and webhooks through Convex.
  */
 export class StripeSubscriptions {
-  private apiKey: string;
+  private _apiKey: string;
   constructor(
     public component: StripeComponent,
     options?: {
       STRIPE_SECRET_KEY?: string;
     }
   ) {
-    this.apiKey = options?.STRIPE_SECRET_KEY ?? process.env.STRIPE_SECRET_KEY!;
-    if (!this.apiKey) {
+    this._apiKey = options?.STRIPE_SECRET_KEY ?? process.env.STRIPE_SECRET_KEY!;
+  }
+  get apiKey() {
+    if (!this._apiKey) {
       throw new Error("STRIPE_SECRET_KEY environment variable is not set");
     }
+    return this._apiKey;
   }
 
   /**
@@ -156,11 +159,7 @@ export class StripeSubscriptions {
       returnUrl: string;
     }
   ) {
-    const apiKey = process.env.STRIPE_SECRET_KEY;
-    if (!apiKey) {
-      throw new Error("STRIPE_SECRET_KEY environment variable is not set");
-    }
-    const stripe = new StripeSDK(apiKey);
+    const stripe = new StripeSDK(this.apiKey);
 
     const session = await stripe.billingPortal.sessions.create({
       customer: args.customerId,
@@ -232,14 +231,16 @@ export function registerRoutes(
 
       const body = await req.text();
 
-      if (!process.env.STRIPE_SECRET_KEY) {
+      const apiKey = config?.STRIPE_SECRET_KEY || process.env.STRIPE_SECRET_KEY;
+
+      if (!apiKey) {
         console.error("❌ STRIPE_SECRET_KEY is not set");
         return new Response("Stripe secret key not configured", {
           status: 500,
         });
       }
 
-      const stripe = new StripeSDK(process.env.STRIPE_SECRET_KEY);
+      const stripe = new StripeSDK(apiKey);
 
       // Verify webhook signature
       let event: StripeSDK.Event;

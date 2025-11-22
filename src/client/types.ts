@@ -121,6 +121,12 @@ export type RegisterRoutesConfig = {
    * Defaults to process.env.STRIPE_WEBHOOK_SECRET
    */
   STRIPE_WEBHOOK_SECRET?: string;
+
+  /**
+   * Stripe secret key for API calls.
+   * Defaults to process.env.STRIPE_SECRET_KEY
+   */
+  STRIPE_SECRET_KEY?: string;
 };
 
 /**
